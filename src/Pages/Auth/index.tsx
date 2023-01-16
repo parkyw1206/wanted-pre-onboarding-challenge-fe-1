@@ -1,5 +1,5 @@
 import axios from "axios";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ToastContainer, toast } from "react-toastify";
 import logo from "../../shared/images/logo.png";
@@ -18,6 +18,10 @@ function AuthPage() {
     password: false,
   });
   const [page, changePage] = useState<"LOGIN" | "SIGNUP">("LOGIN");
+  useEffect(() => {
+    changeInputAccount({ email: "", password: "" });
+    changeErrorAccount({ email: false, password: false });
+  }, [page]);
   const changeAccountInput = (type: "email" | "password", value: string) => {
     const regexAccount = {
       email: /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
@@ -29,6 +33,7 @@ function AuthPage() {
       [type]: !regexAccount[type].test(value),
     });
   };
+
   const handleLoginUser = () => {
     axios
       .post("http://localhost:8080/users/login", {
@@ -38,6 +43,10 @@ function AuthPage() {
       .then(function (response) {
         const responseData = response.data;
         toast.success(responseData.message);
+        axios.defaults.headers.common[
+          "Authorization"
+        ] = `Bearer ${responseData.token}`;
+
         window.localStorage.setItem("token", responseData.token);
         navigate("/todo");
       })
@@ -85,6 +94,7 @@ function AuthPage() {
         <input
           placeholder="이메일을 입력해주세요."
           className="auth-input"
+          value={inputAccount.email}
           onChange={(e) => changeAccountInput("email", e.target.value)}
         />
         <span className="auth-error">
@@ -93,6 +103,7 @@ function AuthPage() {
         <input
           placeholder="비밀번호를 입력해주세요."
           className="auth-input"
+          value={inputAccount.password}
           onChange={(e) => changeAccountInput("password", e.target.value)}
           type={"password"}
         />
