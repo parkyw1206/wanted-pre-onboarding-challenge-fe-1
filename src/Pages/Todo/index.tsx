@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "react-toastify";
 import classnames from "classnames";
 import axios from "axios";
@@ -18,7 +18,9 @@ interface todoInterface {
 }
 function TodoPage() {
   const navigate = useNavigate();
-  const [clickedContentIndex, changeClickedContentIndex] = useState(-1);
+
+  const params = new URLSearchParams(window.location.search);
+  const [clickedContentIndex, changeClickedContentIndex] = useState("-1");
   const [infoMode, changeInfoMode] = useState<"edit" | "list">("list");
   const [isAddTodoModalOpen, toggleAddTodoModalOpen] = useState(false);
   const [todoList, changeTodoList] = useState<todoInterface[]>([]);
@@ -44,8 +46,16 @@ function TodoPage() {
         },
       })
       .then(function (response) {
-        const responseData = response.data;
-        changeTodoList(responseData.data);
+        const responseData: todoInterface[] = response.data.data;
+        const urlID = params.get("id");
+        changeTodoList(responseData);
+        if (
+          urlID &&
+          responseData.filter((item) => item.id === urlID).length > 0
+        ) {
+          changeClickedContentIndex(urlID);
+          handleChangeFocusTodoItem(urlID);
+        }
       })
       .catch((error) => {
         const errorResponse = error.response.data;
@@ -69,6 +79,7 @@ function TodoPage() {
       .then(function (response) {
         changeTodoList([...todoList, response.data.data]);
         toggleAddTodoModalOpen(false);
+        toast.success("성공적으로 추가했습니다.");
       })
       .catch((error) => {
         console.log(error.response);
@@ -76,7 +87,7 @@ function TodoPage() {
         toast.error(errorResponse.details ?? "알 수 없는 오류");
       });
   };
-  const handleChangeFocusTodoItem = (id: string, index: number) => {
+  const handleChangeFocusTodoItem = (id: string) => {
     axios
       .get(`http://localhost:8080/todos/${id}`, {
         headers: {
@@ -84,12 +95,14 @@ function TodoPage() {
         },
       })
       .then(function (response) {
-        changeClickedContentIndex(index);
+        changeClickedContentIndex(id);
         changeFocusedItemInfo(response.data.data);
         setChangeItem({
           title: response.data.data.title,
           content: response.data.data.content,
         });
+        params.get("id") ? params.set("id", id) : params.append("id", id);
+        navigate("/todo?" + params.toString());
       })
       .catch((error) => {
         console.log(error.response);
@@ -112,12 +125,60 @@ function TodoPage() {
         }
       )
       .then(function (response) {
+        toast.success("성공적으로 수정했습니다.");
         changeFocusedItemInfo({
           ...focusedItemInfo,
           title: changeItem.title,
           content: changeItem.content,
         });
-        toast.success("성공적으로 수정했습니다.");
+        changeTodoList(
+          todoList.map((item) =>
+            item.id === id
+              ? {
+                  ...item,
+                  title: changeItem.title,
+                  content: changeItem.content,
+                }
+              : item
+          )
+        );
+      })
+      .catch((error) => {
+        console.log(error.response);
+        const errorResponse = error.response.data;
+        toast.error(errorResponse.details ?? "알 수 없는 오류");
+      });
+  };
+  const handleCancelChangeInfo = () => {
+    changeInfoMode("list");
+    setChangeItem({
+      title: focusedItemInfo.title,
+      content: focusedItemInfo.content,
+    });
+  };
+  const handleDeleteChangeInfo = (id: string) => {
+    axios
+      .delete(`http://localhost:8080/todos/${id}`, {
+        headers: {
+          Authorization: window.localStorage.getItem("token"),
+        },
+      })
+      .then(function (response) {
+        toast.success(`${focusedItemInfo.title}을 삭세하였습니다.`);
+        setChangeItem({
+          title: "",
+          content: "",
+        });
+        changeFocusedItemInfo({
+          title: "",
+          content: "",
+          id: "",
+          createdAt: "",
+          updatedAt: "",
+        });
+        changeTodoList(todoList.filter((item) => item.id !== id));
+        changeClickedContentIndex("-1");
+        navigate("/todo");
       })
       .catch((error) => {
         console.log(error.response);
@@ -170,17 +231,51 @@ function TodoPage() {
             {dayjs(focusedItemInfo.updatedAt).format("YYYY/MM/DD HH:mm")}
           </span>
         </div>
-        <input
-          type={"button"}
-          value={infoMode === "edit" ? "확인" : "수정"}
-          className="info-item--button"
-          onClick={() => {
-            changeInfoMode(infoMode === "edit" ? "list" : "edit");
-            handleChangeInfoItem(focusedItemInfo.id);
-          }}
-        />
+        <div className="info-item--button">
+          {infoMode === "edit" ? (
+            <input
+              type={"button"}
+              value={"취소"}
+              onClick={() => {
+                handleCancelChangeInfo();
+              }}
+            />
+          ) : (
+            <input
+              type={"button"}
+              value={"삭제"}
+              onClick={() => {
+                handleDeleteChangeInfo(focusedItemInfo.id);
+              }}
+            />
+          )}
+
+          <input
+            type={"button"}
+            value={infoMode === "edit" ? "확인" : "수정"}
+            onClick={() => {
+              changeInfoMode(infoMode === "edit" ? "list" : "edit");
+              infoMode === "edit" && handleChangeInfoItem(focusedItemInfo.id);
+            }}
+          />
+        </div>
       </div>
     );
+  };
+  const getIndexColor = (id: string) => {
+    const colors = [
+      "#2C5BF2",
+      "#C9CDFF",
+      "#2659EF",
+      "#001B9D",
+      "#00077F",
+      "#5C76FF",
+      "#8292FF",
+      "#A6AFFF",
+      "#AAA5DC",
+      "#8D9AFF",
+    ];
+    return colors[(id[0].charCodeAt(0) + id[id.length - 1].charCodeAt(0)) % 10];
   };
   return (
     <div className="todo">
@@ -248,11 +343,18 @@ function TodoPage() {
             {todoList.map((item: todoInterface, index) => (
               <div
                 className={classnames("todo-item", {
-                  clicked: clickedContentIndex === index,
+                  clicked: clickedContentIndex === item.id,
                 })}
-                onClick={() => handleChangeFocusTodoItem(item.id, index)}
+                onClick={() => handleChangeFocusTodoItem(item.id)}
               >
-                <span className="todo-number">{index + 1}</span>
+                <span
+                  className="todo-number"
+                  style={{
+                    background: getIndexColor(item.id),
+                  }}
+                >
+                  {index + 1}
+                </span>
                 <span className="todo-contentName">{item.title}</span>
               </div>
             ))}
@@ -266,10 +368,10 @@ function TodoPage() {
           </div>
           <div
             className={classNames("todo-right", {
-              none: clickedContentIndex === -1,
+              none: clickedContentIndex === "-1",
             })}
           >
-            {clickedContentIndex === -1
+            {clickedContentIndex === "-1"
               ? "자세히 보고싶은 일을 선택해주세요."
               : getFocusedInfoPage()}
           </div>
